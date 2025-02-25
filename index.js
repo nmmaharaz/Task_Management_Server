@@ -10,16 +10,19 @@ const port = process.env.PORT || 5000;
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000", // Adjust if needed
-    methods: ["GET", "POST", "PUT"],
+    origin: [
+      "http://localhost:5173",
+      "https://taskmanagement-8ad05.web.app",
+      "https://taskmanagement-8ad05.firebaseapp.com"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
   },
 });
 
-// Middleware
 app.use(express.json());
 app.use(cors());
 
-// MongoDB Connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.vh6jx.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
 const client = new MongoClient(uri, {
@@ -32,30 +35,21 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect(); // Connect to DB
+    await client.connect(); 
     console.log("Connected to MongoDB");
-
-    const usersCollection = client.db("TaskManagement").collection("user");
     const taskCollection = client.db("TaskManagement").collection("task");
 
-    // Create User
-    app.post("/users", async (req, res) => {
-      const { email } = req.body;
-      const query = { email };
-      const existingUser = await usersCollection.findOne(query);
-
-      if (existingUser) return res.send("User already exists");
-      const result = await usersCollection.insertOne(req.body);
-      res.send(result);
-    });
-
-    app.get("/tasks", async (req, res) => {
-      const {email} = req.query;
-      const tasks = await taskCollection.find({email}).toArray();
-      res.send(tasks);
+    app.get("/tasks/:email", async (req, res) => {
+        const email = req.params.email;
+        const query = { email };
+        console.log("Fetching tasks for email:", email);
+        const result = await taskCollection.find(query).toArray();
+        console.log("Tasks:", result);
+        res.json(result);
     });
 
     app.post("/tasks", async (req, res) => {
+      console.log("add new task", req.body);
       const result = await taskCollection.insertOne(req.body);
       io.emit("taskUpdated", await taskCollection.find().toArray()); // Broadcast update
       res.send(result);
@@ -64,7 +58,6 @@ async function run() {
     app.put("/tasks/:id", async (req, res) => {
       const { id } = req.params;
       const { category } = req.body;
-      console.log("update task category", id, category);
       const result = await taskCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { category } }
@@ -75,30 +68,23 @@ async function run() {
     });
 
     app.delete("/tasks/:id", async (req, res) => {
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const result = await taskCollection.deleteOne(query);
-        res.send(result);
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await taskCollection.deleteOne(query);
+      res.send(result);
     });
 
     app.put("/task/:id", async (req, res) => {
       const id = req.params.id;
-      console.log("update task", id);
       const updateData = req.body;
-      console.log("updateData", updateData);
       const result = await taskCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: updateData }
       );
-      console.log("Task updated", result);
       res.send(result);
     });
-
-    // Real-time Socket.io Connection
     io.on("connection", (socket) => {
-      // console.log("New client connected");
 
-      // Send initial task data
       taskCollection
         .find()
         .toArray()
@@ -117,12 +103,10 @@ async function run() {
 
 run().catch(console.dir);
 
-// Basic route
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-// Start Server
 server.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
+  console.log(`Server running on `);
 });
